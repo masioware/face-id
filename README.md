@@ -1,4 +1,4 @@
-# FaceID --- Real-Time Face Recognition (FastAPI + WebSockets + GPU)
+# FaceID - Real-Time Face Recognition
 
 A lightweight **real-time face recognition system** built with
 **FastAPI**, **WebSockets**, and **InsightFace**, designed for
