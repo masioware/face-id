@@ -14,6 +14,16 @@ The system uses **ONNXRuntime GPU acceleration** and streams frames
 through **WebSockets**, enabling fast inference without heavy frontend
 frameworks.
 
+## 🎥 Live Demo
+
+<p align="center">
+  <img src="assets/demo.gif" width="800" alt="FaceID Demo"/>
+</p>
+
+<p align="center">
+Real-time face detection and recognition streaming from the browser.
+</p>
+
 ------------------------------------------------------------------------
 
 ## Demo Architecture
