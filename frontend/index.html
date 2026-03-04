@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>WS Identify Test</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <h1>Face Identify</h1>
+
+      <div id="wrap">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="overlay" width="640" height="480"></canvas>
+      </div>
+
+      <div class="row">
+        <button id="btnStart" class="primary">Start</button>
+        <button id="btnStop" disabled>Stop</button>
+        <button id="btnEnroll" class="secondary">Enroll</button>
+
+        <span id="wsPill" class="pill pill-status">
+          WS: <b id="wsStatus">disconnected</b>
+        </span>
+
+        <span class="pill">Send FPS: <b id="fps">0</b></span>
+        <span class="pill">Last frame_id: <b id="frameId">-</b></span>
+      </div>
+      <script>
+        const W = 640,
+          H = 480;
+        const SEND_INTERVAL_MS = 42;
+
+        // High-contrast "highlight green"
+        const GREEN = "#00ff66";
+        const GREEN_SHADOW = "rgba(0, 0, 0, 0.85)";
+
+        const wrap = document.getElementById("wrap");
+        const video = document.getElementById("video");
+        const overlay = document.getElementById("overlay");
+        const octx = overlay.getContext("2d");
+
+        const btnStart = document.getElementById("btnStart");
+        const btnStop = document.getElementById("btnStop");
+        const wsPill = document.getElementById("wsPill");
+        const wsStatus = document.getElementById("wsStatus");
+        const fpsEl = document.getElementById("fps");
+        const frameIdEl = document.getElementById("frameId");
+        const btnEnroll = document.getElementById("btnEnroll");
+
+        btnEnroll.onclick = () => {
+          window.location.href = "./enroll.html";
+        };
+
+        const cap = document.createElement("canvas");
+        cap.width = W;
+        cap.height = H;
+        const cctx = cap.getContext("2d");
+
+        let stream = null;
+        let ws = null;
+        let timer = null;
+
+        let framesSent = 0;
+        let lastFpsTs = performance.now();
+
+        function setStatus(status) {
+          wsStatus.textContent = status;
+
+          wsPill.classList.remove("pill-success", "pill-error");
+          wrap.classList.remove("connected", "disconnected");
+
+          if (status === "connected") {
+            wsPill.classList.add("pill-success");
+            wrap.classList.add("connected");
+          } else if (status === "disconnected" || status === "error") {
+            wsPill.classList.add("pill-error");
+            wrap.classList.add("disconnected");
+          }
+        }
+
+        function clearOverlay() {
+          octx.clearRect(0, 0, W, H);
+        }
+
+        function drawTextPill(ctx, x, y, text) {
+          ctx.save();
+
+          ctx.font = "700 16px system-ui";
+          ctx.textBaseline = "top";
+
+          const padX = 8;
+          const padY = 5;
+          const metrics = ctx.measureText(text);
+          const textW = Math.ceil(metrics.width);
+          const textH = 18; // approximate for 16px font
+
+          const boxW = textW + padX * 2;
+          const boxH = textH + padY * 2;
+
+          // Keep label within canvas bounds
+          const clampedX = Math.max(0, Math.min(x, W - boxW));
+          const clampedY = Math.max(0, Math.min(y, H - boxH));
+
+          // Shadowed dark background for contrast
+          ctx.fillStyle = GREEN_SHADOW;
+          ctx.beginPath();
+          roundRect(ctx, clampedX, clampedY, boxW, boxH, 10);
+          ctx.fill();
+
+          // Text glow + fill
+          ctx.fillStyle = GREEN;
+          ctx.shadowColor = "rgba(0, 255, 102, 0.75)";
+          ctx.shadowBlur = 10;
+          ctx.fillText(text, clampedX + padX, clampedY + padY);
+
+          ctx.restore();
+        }
+
+        function roundRect(ctx, x, y, w, h, r) {
+          const radius = Math.min(r, w / 2, h / 2);
+          ctx.moveTo(x + radius, y);
+          ctx.arcTo(x + w, y, x + w, y + h, radius);
+          ctx.arcTo(x + w, y + h, x, y + h, radius);
+          ctx.arcTo(x, y + h, x, y, radius);
+          ctx.arcTo(x, y, x + w, y, radius);
+          ctx.closePath();
+        }
+
+        function drawFaces(faces) {
+          clearOverlay();
+
+          // Stroke style: thicker + glow
+          octx.strokeStyle = GREEN;
+          octx.lineWidth = 4;
+          octx.shadowColor = "rgba(0, 255, 102, 0.55)";
+          octx.shadowBlur = 10;
+
+          for (const f of faces || []) {
+            const [x1, y1, x2, y2] = f.bbox || [0, 0, 0, 0];
+            const name = f.name ?? "unknown";
+            const score =
+              typeof f.score === "number" ? f.score.toFixed(3) : "n/a";
+            const label = `${name} (${score})`;
+
+            const w = x2 - x1;
+            const h = y2 - y1;
+
+            // Bounding box
+            octx.strokeRect(x1, y1, w, h);
+
+            // Label (try above the box; if clipped, place inside)
+            const labelX = x1;
+            const labelY = y1 - 30 < 0 ? y1 + 6 : y1 - 30;
+            drawTextPill(octx, labelX, labelY, label);
+          }
+
+          // Reset shadow so it doesn't affect other draws
+          octx.shadowBlur = 0;
+        }
+
+        async function startCamera() {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: W, height: H },
+            audio: false,
+          });
+          video.srcObject = stream;
+          await video.play();
+        }
+
+        function stopCamera() {
+          if (!stream) return;
+          stream.getTracks().forEach((t) => t.stop());
+          stream = null;
+          video.srcObject = null;
+        }
+
+        function connectWS() {
+          ws = new WebSocket("ws://localhost:8081/ws/identify");
+          console.log("Connecting to:", ws.url);
+          ws.binaryType = "arraybuffer";
+
+          ws.onopen = () => setStatus("connected");
+          ws.onclose = () => setStatus("disconnected");
+          ws.onerror = (e) => {
+            console.error("WS error", e);
+            setStatus("error");
+          };
+
+          ws.onmessage = (evt) => {
+            const data = JSON.parse(evt.data);
+            frameIdEl.textContent = data.frame_id ?? "-";
+            drawFaces(data.faces);
+          };
+        }
+
+        function disconnectWS() {
+          if (!ws) return;
+          try {
+            ws.close();
+          } catch {}
+          ws = null;
+          setStatus("disconnected");
+        }
+
+        function tickFPS() {
+          framesSent += 1;
+          const now = performance.now();
+          if (now - lastFpsTs >= 1000) {
+            fpsEl.textContent = String(framesSent);
+            framesSent = 0;
+            lastFpsTs = now;
+          }
+        }
+
+        function startSending() {
+          timer = setInterval(() => {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            if (!stream) return;
+
+            cctx.drawImage(video, 0, 0, W, H);
+
+            cap.toBlob(
+              async (blob) => {
+                if (!blob || !ws || ws.readyState !== WebSocket.OPEN) return;
+                const buf = await blob.arrayBuffer();
+                ws.send(buf);
+                tickFPS();
+              },
+              "image/jpeg",
+              0.8,
+            );
+          }, SEND_INTERVAL_MS);
+        }
+
+        function stopSending() {
+          if (!timer) return;
+          clearInterval(timer);
+          timer = null;
+        }
+
+        btnStart.onclick = async () => {
+          btnStart.disabled = true;
+          try {
+            await startCamera();
+            connectWS();
+            startSending();
+            btnStop.disabled = false;
+          } catch (e) {
+            console.error(e);
+            btnStart.disabled = false;
+          }
+        };
+
+        btnStop.onclick = () => {
+          btnStop.disabled = true;
+          stopSending();
+          disconnectWS();
+          stopCamera();
+          clearOverlay();
+          fpsEl.textContent = "0";
+          frameIdEl.textContent = "-";
+          btnStart.disabled = false;
+        };
+      </script>
+    </div>
+  </body>
+</html>

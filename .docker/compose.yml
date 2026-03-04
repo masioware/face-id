@@ -1,0 +1,27 @@
+services:
+  face-id:
+    build:
+      context: ..
+      dockerfile: .docker/app.dockerfile
+    container_name: face-id
+    ports:
+      - "8081:8081"
+    environment:
+      - INSIGHTFACE_HOME=/app/.insightface
+      - FACEID_WS_MAX_FRAME_BYTES=2500000
+      - FACEID_WS_ACCEPT_TEXT_MESSAGES=true
+    # GPU
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+  frontend:
+    build:
+      context: ..
+      dockerfile: .docker/frontend.dockerfile
+    container_name: face-id-frontend
+    ports:
+      - "80:80"

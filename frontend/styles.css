@@ -1,0 +1,188 @@
+:root {
+  --bg: #0f1117;
+  --bg-elevated: #161b22;
+  --border: #2a2f3a;
+  --text: #e6edf3;
+  --muted: #8b949e;
+
+  --accent: #00ff66;
+  --danger: #ff4646;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  background: radial-gradient(circle at 20% 20%, #1a1f2b 0%, var(--bg) 50%);
+  color: var(--text);
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.app {
+  text-align: center;
+}
+
+h2 {
+  margin-bottom: 30px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+#wrap {
+  position: relative;
+  display: inline-block;
+  padding: 20px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+
+  transition: background 0.4s ease,
+              box-shadow 0.4s ease,
+              border-color 0.4s ease;
+}
+
+/* dynamic highlight states */
+#wrap.connected {
+  background: rgba(0, 255, 102, 0.05);
+  border-color: rgba(0, 255, 102, 0.4);
+  box-shadow: 0 0 40px rgba(0, 255, 102, 0.12);
+}
+
+#wrap.disconnected {
+  background: rgba(255, 70, 70, 0.05);
+  border-color: rgba(255, 70, 70, 0.4);
+  box-shadow: 0 0 40px rgba(255, 70, 70, 0.12);
+}
+
+video {
+  width: 640px;
+  height: 480px;
+  border-radius: 14px;
+  background: #000;
+}
+
+canvas {
+  position: absolute;
+  left: 20px;
+  top: 20px;
+  border-radius: 14px;
+}
+
+.row {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  align-items: center;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.pill {
+  padding: 8px 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 14px;
+  color: var(--muted);
+  transition: all 0.25s ease;
+}
+
+.pill b {
+  color: var(--text);
+}
+
+.pill-success {
+  background: rgba(0, 255, 102, 0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 12px rgba(0, 255, 102, 0.25);
+}
+
+.pill-error {
+  background: rgba(255, 70, 70, 0.15);
+  border-color: var(--danger);
+  color: var(--danger);
+  box-shadow: 0 0 12px rgba(255, 70, 70, 0.25);
+}
+
+button {
+  padding: 10px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+button.primary {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  font-weight: 600;
+}
+
+button.primary:hover {
+  filter: brightness(1.1);
+}
+
+button.secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+button.secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Inputs (dark, consistent with pills/buttons) */
+input {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  outline: none;
+  font-size: 14px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+input::placeholder {
+  color: rgba(139, 148, 158, 0.7);
+}
+
+input:focus {
+  border-color: rgba(0, 255, 102, 0.55);
+  box-shadow: 0 0 0 3px rgba(0, 255, 102, 0.15);
+}
+
+/* Make pills that contain inputs look nicer */
+.pill:has(input) {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 10px;
+}
+
+.pill:has(input) input {
+  border-radius: 9px;
+}

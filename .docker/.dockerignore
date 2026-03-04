@@ -1,0 +1,15 @@
+.venv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+db/
+.insightface/
+.git/
+.gitignore
+frontend/node_modules/

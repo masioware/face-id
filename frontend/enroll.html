@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>WS Enroll</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+
+  <body>
+    <div class="app">
+      <h1>Face Enroll</h1>
+
+      <div id="wrap">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="overlay" width="640" height="480"></canvas>
+      </div>
+
+      <div class="row">
+        <label class="pill">
+          name:
+          <input id="name" value="marcio" />
+        </label>
+
+        <button id="btnStart" class="primary">Start</button>
+        <button id="btnCommit" disabled>Commit</button>
+        <button id="btnCancel" disabled>Cancel</button>
+        <button id="btnIdentify" class="secondary">Identify</button>
+
+        <span id="wsPill" class="pill pill-status">
+          WS: <b id="status">disconnected</b>
+        </span>
+
+        <span class="pill">Sent FPS: <b id="fps">0</b></span>
+        <span class="pill">received: <b id="received">0</b></span>
+        <span class="pill">accepted: <b id="accepted">0</b></span>
+        <span class="pill">rejected: <b id="rejected">0</b></span>
+        <span class="pill">last_reason: <b id="reason">-</b></span>
+
+        <span id="final" class="pill" style="display: none"></span>
+      </div>
+    </div>
+
+    <script>
+      // ===== Tunables =====
+      const W = 640,
+        H = 480;
+      const SEND_INTERVAL_MS = 42; // ~24 FPS
+      const JPEG_QUALITY = 0.8;
+
+      const scheme = location.protocol === "https:" ? "wss" : "ws";
+      const API_WS = `${scheme}://localhost:8081`;
+
+      // ====================
+      const wrap = document.getElementById("wrap");
+      const video = document.getElementById("video");
+      const overlay = document.getElementById("overlay");
+      const octx = overlay.getContext("2d");
+
+      const nameEl = document.getElementById("name");
+      const btnStart = document.getElementById("btnStart");
+      const btnCommit = document.getElementById("btnCommit");
+      const btnCancel = document.getElementById("btnCancel");
+      const btnIdentify = document.getElementById("btnIdentify");
+
+      const wsPill = document.getElementById("wsPill");
+      const statusEl = document.getElementById("status");
+      const fpsEl = document.getElementById("fps");
+      const receivedEl = document.getElementById("received");
+      const acceptedEl = document.getElementById("accepted");
+      const rejectedEl = document.getElementById("rejected");
+      const reasonEl = document.getElementById("reason");
+      const finalEl = document.getElementById("final");
+
+      const cap = document.createElement("canvas");
+      cap.width = W;
+      cap.height = H;
+      const cctx = cap.getContext("2d");
+
+      let stream = null;
+      let ws = null;
+      let timer = null;
+
+      let framesSent = 0;
+      let lastFpsTs = performance.now();
+
+      function setStatus(status) {
+        statusEl.textContent = status;
+
+        wsPill.classList.remove("pill-success", "pill-error");
+        wrap.classList.remove("connected", "disconnected");
+
+        if (status === "connected") {
+          wsPill.classList.add("pill-success");
+          wrap.classList.add("connected");
+        } else if (status === "disconnected" || status === "error") {
+          wsPill.classList.add("pill-error");
+          wrap.classList.add("disconnected");
+        }
+      }
+
+      function showFinal(msg) {
+        finalEl.style.display = "inline-block";
+        finalEl.textContent = msg;
+      }
+
+      function hideFinal() {
+        finalEl.style.display = "none";
+        finalEl.textContent = "";
+      }
+
+      function resetCounters() {
+        fpsEl.textContent = "0";
+        receivedEl.textContent = "0";
+        acceptedEl.textContent = "0";
+        rejectedEl.textContent = "0";
+        reasonEl.textContent = "-";
+        framesSent = 0;
+        lastFpsTs = performance.now();
+      }
+
+      async function startCamera() {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: W, height: H },
+          audio: false,
+        });
+        video.srcObject = stream;
+        await video.play();
+      }
+
+      function stopCamera() {
+        if (!stream) return;
+        stream.getTracks().forEach((t) => t.stop());
+        stream = null;
+        video.srcObject = null;
+      }
+
+      function connectWS(name) {
+        const url = `${API_WS}/ws/enroll?name=${encodeURIComponent(name)}`;
+
+        ws = new WebSocket(url);
+        ws.binaryType = "arraybuffer";
+
+        ws.onopen = () => setStatus("connected");
+        ws.onclose = () => setStatus("disconnected");
+        ws.onerror = (e) => {
+          console.error("WS error", e);
+          setStatus("error");
+        };
+
+        ws.onmessage = (evt) => {
+          try {
+            const data = JSON.parse(evt.data);
+
+            if (data.type === "ack") return;
+
+            if (data.type === "progress") {
+              receivedEl.textContent = String(data.received ?? 0);
+              acceptedEl.textContent = String(data.accepted ?? 0);
+              rejectedEl.textContent = String(data.rejected ?? 0);
+              reasonEl.textContent = data.last_reason ?? "-";
+              return;
+            }
+
+            if (data.type === "committed") {
+              showFinal(`Committed: ${data.name} (${data.samples} samples)`);
+              stopSending();
+              disconnectWS();
+
+              btnCommit.disabled = true;
+              btnCancel.disabled = true;
+              btnStart.disabled = false;
+              return;
+            }
+          } catch {
+            // ignore non-json
+          }
+        };
+      }
+
+      function disconnectWS() {
+        if (!ws) return;
+        try {
+          ws.close();
+        } catch {}
+        ws = null;
+        setStatus("disconnected");
+      }
+
+      function tickFPS() {
+        framesSent += 1;
+        const now = performance.now();
+        if (now - lastFpsTs >= 1000) {
+          fpsEl.textContent = String(framesSent);
+          framesSent = 0;
+          lastFpsTs = now;
+        }
+      }
+
+      function startSending() {
+        timer = setInterval(() => {
+          if (!ws || ws.readyState !== WebSocket.OPEN) return;
+          if (!stream) return;
+
+          cctx.drawImage(video, 0, 0, W, H);
+
+          cap.toBlob(
+            async (blob) => {
+              if (!blob || !ws || ws.readyState !== WebSocket.OPEN) return;
+              const buf = await blob.arrayBuffer();
+              ws.send(buf);
+              tickFPS();
+            },
+            "image/jpeg",
+            JPEG_QUALITY,
+          );
+        }, SEND_INTERVAL_MS);
+      }
+
+      function stopSending() {
+        if (!timer) return;
+        clearInterval(timer);
+        timer = null;
+      }
+
+      btnStart.onclick = async () => {
+        hideFinal();
+        resetCounters();
+
+        const name = nameEl.value.trim();
+        if (!name) return;
+
+        btnStart.disabled = true;
+        btnCommit.disabled = false;
+        btnCancel.disabled = false;
+
+        try {
+          await startCamera();
+          connectWS(name);
+          startSending();
+        } catch (e) {
+          console.error(e);
+          btnStart.disabled = false;
+          btnCommit.disabled = true;
+          btnCancel.disabled = true;
+        }
+      };
+
+      btnCommit.onclick = () => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        stopSending(); // avoid noise while committing
+        ws.send(JSON.stringify({ type: "commit" }));
+      };
+
+      btnCancel.onclick = () => {
+        stopSending();
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "cancel" }));
+        }
+        disconnectWS();
+        stopCamera();
+
+        btnStart.disabled = false;
+        btnCommit.disabled = true;
+        btnCancel.disabled = true;
+        hideFinal();
+      };
+
+      btnIdentify.onclick = () => {
+        window.location.href = "./index.html";
+      };
+
+      // keep overlay clear (no drawings here yet)
+      octx.clearRect(0, 0, W, H);
+      setStatus("disconnected");
+    </script>
+  </body>
+</html>
